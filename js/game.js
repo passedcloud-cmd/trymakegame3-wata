@@ -8,7 +8,7 @@
 // 게임 상태(G.state)
 //   title → story(프롤로그) → play ⇄ levelup / paused
 //         → clear → story(클리어 대화) → 다음 스테이지 …
-//   play 중 루나 체력 0 → gameover
+//   play 중 히나코 체력 0 → gameover
 //   play / story / levelup 중 ESC → paused(일시정지 메뉴) → 원래 상태로 복귀
 // =====================================================
 
@@ -32,8 +32,8 @@ const FONT_BODY = '"Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", sans-s
 
 const PLAYER_R = 18;
 const FOLLOWER_R = 14;
-const FOLLOW_DIST = 54;     // 루나가 레온 뒤로 얼마나 떨어져서 따라오는지
-const FOLLOWER_IFRAME = 0.35; // 루나가 맞은 뒤 잠깐 무적인 시간
+const FOLLOW_DIST = 54;     // 히나코가 시오리 뒤로 얼마나 떨어져서 따라오는지
+const FOLLOWER_IFRAME = 0.35; // 히나코가 맞은 뒤 잠깐 무적인 시간
 const MAX_MONSTERS = 220;
 
 // ---------- 작은 도구 함수들 ----------
@@ -100,7 +100,7 @@ function retryStage() {
 }
 
 function resetWorld() {
-  G.player = { x: 0, y: 0, fx: 1, fy: 0, dirX: 1, back: false, moving: false, t: 0, atkTimer: 0, swing: 0, swingDir: 1, skillTimer: 2 };
+  G.player = { x: 0, y: 0, fx: 1, fy: 0, dirX: 1, back: false, moving: false, t: 0, atkTimer: 0, swing: 0, swingDir: 1, claw: 0, skillTimer: 2 };
   G.follower = { x: -FOLLOW_DIST, y: 0, hp: S().followerMax, dirX: 1, back: false, moving: false, t: 0, flash: 0, iframe: 0 };
   G.trail = [{ x: -FOLLOW_DIST, y: 0 }, { x: 0, y: 0 }];
   G.monsters = [];
@@ -223,7 +223,7 @@ function updatePlay(dt) {
   if (Input.wasPressed('pause')) openPause();
 }
 
-// ---------- 플레이어(레온) ----------
+// ---------- 플레이어(시오리) ----------
 function updatePlayer(dt) {
   const p = G.player;
   const s = S();
@@ -241,7 +241,7 @@ function updatePlayer(dt) {
     p.back = iy < 0;
   }
 
-  // 지나간 길을 기록 → 루나가 이 길을 그대로 따라와요
+  // 지나간 길을 기록 → 히나코가 이 길을 그대로 따라와요
   const last = G.trail[G.trail.length - 1];
   if (Math.hypot(p.x - last.x, p.y - last.y) > 4) {
     G.trail.push({ x: p.x, y: p.y });
@@ -251,14 +251,16 @@ function updatePlayer(dt) {
   // 공격 (Z)
   p.atkTimer -= dt;
   p.swing = Math.max(0, p.swing - dt / 0.18);
+  p.claw = Math.max(0, p.claw - dt); // 공격을 멈추고 조금 지나면 팔이 사람 모습으로 돌아와요
   if (Input.isDown('attack') && p.atkTimer <= 0) {
     p.atkTimer = s.atkCd;
     p.swing = 1;
+    p.claw = 1.5;
     p.swingDir *= -1;
     slashAttack(p);
   }
 
-  // 스킬 (X) : 루나를 중심으로 퍼지는 수호의 빛
+  // 스킬 (X) : 히나코를 중심으로 퍼지는 파도 장벽
   p.skillTimer -= dt;
   if (Input.wasPressed('skill') && p.skillTimer <= 0) {
     p.skillTimer = s.skillCd;
@@ -299,14 +301,14 @@ function guardianLight() {
   }
 }
 
-// ---------- 보호 대상(루나) ----------
+// ---------- 보호 대상(히나코) ----------
 function updateFollower(dt) {
   const p = G.player, f = G.follower;
   f.t += dt;
   f.flash = Math.max(0, f.flash - dt);
   f.iframe = Math.max(0, f.iframe - dt);
 
-  // 레온이 지나간 길을 거꾸로 FOLLOW_DIST 만큼 거슬러 올라간 지점이 루나의 목표 위치
+  // 시오리가 지나간 길을 거꾸로 FOLLOW_DIST 만큼 거슬러 올라간 지점이 히나코의 목표 위치
   let need = FOLLOW_DIST;
   let ax = p.x, ay = p.y;
   let tx = ax, ty = ay;
@@ -420,7 +422,7 @@ function spawnMonster(type, ang = rand(0, Math.PI * 2), force = false) {
 function spawnBoss() {
   G.bossSpawned = true;
   Sound.warning();
-  G.banner = { text: '⚠ 그림자 기사 등장! ⚠', t: 0, warn: true };
+  G.banner = { text: '⚠ 굶주린 대요괴 등장! ⚠', t: 0, warn: true };
   const m = spawnMonster('boss', rand(0, Math.PI * 2), true);
   const p = G.player;
   m.x = p.x + 500; m.y = p.y - 200;
@@ -441,7 +443,7 @@ function updateBoss(m, dt) {
     m.y += (dy / d) * m.def.speed * dt;
     m.lookX = dx >= 0 ? 1 : -1;
     if (m.stateT > 4.5) {
-      // 돌진 준비: 루나 쪽을 조준
+      // 돌진 준비: 히나코 쪽을 조준
       m.state = 'aim';
       m.stateT = 0;
       m.aimAng = Math.atan2(dy, dx);
@@ -455,9 +457,9 @@ function updateBoss(m, dt) {
     if (m.stateT > 0.6) {
       m.state = 'walk';
       m.stateT = 0;
-      // 돌진이 끝나면 박쥐 부하를 불러요
+      // 돌진이 끝나면 귀신불 부하를 불러요
       for (let i = 0; i < 3; i++) {
-        const b = spawnMonster('bat');
+        const b = spawnMonster('wisp');
         if (b) { b.x = m.x + rand(-60, 60); b.y = m.y + rand(-60, 60); }
       }
     }
@@ -477,12 +479,12 @@ function updateMonsters(dt) {
     if (m.type === 'boss') {
       updateBoss(m, dt);
     } else {
-      // 모든 몬스터는 루나를 노려요!
+      // 모든 요괴는 히나코를 노려요!
       let dx = f.x - m.x, dy = f.y - m.y;
       const d = Math.hypot(dx, dy) || 1;
       dx /= d; dy /= d;
-      if (m.type === 'bat') {
-        // 박쥐는 지그재그로 날아와요
+      if (m.type === 'wisp') {
+        // 귀신불은 지그재그로 날아와요
         const w = Math.sin(m.t * 4 + m.wobble) * 0.7;
         const nx = dx - dy * w, ny = dy + dx * w;
         const nl = Math.hypot(nx, ny);
@@ -499,7 +501,7 @@ function updateMonsters(dt) {
     const decay = Math.exp(-9 * dt);
     m.kx *= decay; m.ky *= decay;
 
-    // 레온은 몸으로 몬스터를 막을 수 있어요 (보스는 레온을 밀어내요)
+    // 시오리는 몸으로 요괴를 막을 수 있어요 (보스는 시오리를 밀어내요)
     const pd = Math.hypot(m.x - p.x, m.y - p.y);
     const pmin = m.r + PLAYER_R;
     if (pd < pmin && pd > 0.01) {
@@ -513,7 +515,7 @@ function updateMonsters(dt) {
       }
     }
 
-    // 루나에게 닿으면 피해
+    // 히나코에게 닿으면 피해
     const fd = Math.hypot(m.x - f.x, m.y - f.y);
     const fmin = m.r + FOLLOWER_R;
     if (fd < fmin) {
@@ -793,7 +795,7 @@ function updateLevelUp() {
   if (Input.wasPressed('pause')) { openPause(); return; }
   const lu = G.levelUp;
   if (lu.choices.length === 0) {
-    // 모든 강화를 다 찍었으면 루나 체력 회복으로 대신
+    // 모든 강화를 다 찍었으면 히나코 체력 회복으로 대신
     G.follower.hp = S().followerMax;
     setState('play');
     return;
@@ -864,14 +866,22 @@ function update(dt) {
 // 그리기
 // =====================================================
 
+// 스테이지별 바닥 색
+const GROUND = {
+  street: { base: '#9a9ca6', patch: 'rgba(70,72,84,0.18)' }, // 하굣길 아스팔트
+  beach: { base: '#e8cc98', patch: 'rgba(170,130,80,0.22)' }, // 바닷가 모래사장
+  shrine: { base: '#8c8896', patch: 'rgba(60,80,60,0.25)' },  // 신사 자갈 마당
+};
+
 function drawGround() {
   const st = stage();
   const cam = G.cam;
   const left = cam.x - W / 2, top = cam.y - H / 2;
-  const base = { forest: '#7cb85c', dusk: '#b7a25e', ruins: '#77718a' }[st.theme];
-  ctx.fillStyle = base;
+  const theme = GROUND[st.theme];
+  ctx.fillStyle = theme.base;
   ctx.fillRect(left - 50, top - 50, W + 100, H + 100);
 
+  // 바닥을 256px 크기의 칸(청크)으로 나눠서, 칸마다 같은 장식을 그려요
   const CH = 256;
   const cx0 = Math.floor(left / CH) - 1, cx1 = Math.floor((left + W) / CH) + 1;
   const cy0 = Math.floor(top / CH) - 1, cy1 = Math.floor((top + H) / CH) + 1;
@@ -880,65 +890,129 @@ function drawGround() {
     for (let cy = cy0; cy <= cy1; cy++) {
       const rnd = seededRandom(cx, cy, G.stageIndex + 7);
       const ox = cx * CH, oy = cy * CH;
-      if (st.theme === 'ruins') drawRuinTiles(ox, oy, CH, rnd);
-      // 큰 얼룩
       for (let i = 0; i < 2; i++) {
         pathEllipse(ctx, ox + rnd() * CH, oy + rnd() * CH, 40 + rnd() * 50, 20 + rnd() * 25);
-        ctx.fillStyle = st.theme === 'forest' ? '#71ab51' : st.theme === 'dusk' ? '#a8935a' : 'rgba(80,110,70,0.35)';
+        ctx.fillStyle = theme.patch;
         ctx.fill();
       }
-      // 풀
-      ctx.strokeStyle = st.theme === 'forest' ? '#4e8a39' : st.theme === 'dusk' ? '#8a7a40' : '#5d7a52';
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      for (let i = 0; i < 7; i++) {
-        const gx = ox + rnd() * CH, gy = oy + rnd() * CH;
-        ctx.beginPath();
-        ctx.moveTo(gx - 4, gy); ctx.lineTo(gx - 6, gy - 7);
-        ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 10);
-        ctx.moveTo(gx + 4, gy); ctx.lineTo(gx + 6, gy - 7);
-        ctx.stroke();
-      }
-      // 꽃 / 돌
-      for (let i = 0; i < 4; i++) {
-        const fx = ox + rnd() * CH, fy = oy + rnd() * CH, kind = rnd();
-        if (kind < 0.6 && st.theme !== 'ruins') {
-          const col = ['#ffffff', '#ffe066', '#ff9ec7', '#ff7b5c'][Math.floor(rnd() * 4)];
-          ctx.fillStyle = col;
-          for (let k = 0; k < 5; k++) {
-            const a = (k / 5) * Math.PI * 2;
-            pathEllipse(ctx, fx + Math.cos(a) * 3.5, fy + Math.sin(a) * 3.5, 2.8, 2.8); ctx.fill();
-          }
-          pathEllipse(ctx, fx, fy, 2, 2); ctx.fillStyle = '#ffcf3a'; ctx.fill();
-        } else {
-          pathEllipse(ctx, fx, fy, 7 + rnd() * 7, 5 + rnd() * 3);
-          fillStroke(ctx, st.theme === 'ruins' ? '#5d5870' : '#9a9aa6', 1.5, 'rgba(40,30,50,0.5)');
-        }
-      }
+      if (st.theme === 'street') drawStreetChunk(ox, oy, CH, cx, cy, rnd);
+      else if (st.theme === 'beach') drawBeachChunk(ox, oy, CH, rnd);
+      else drawShrineChunk(ox, oy, CH, cx, rnd);
     }
   }
 }
 
-function drawRuinTiles(ox, oy, CH, rnd) {
-  const T = 64;
-  for (let x = 0; x < CH; x += T) {
-    for (let y = 0; y < CH; y += T) {
-      const v = rnd();
-      ctx.fillStyle = v < 0.2 ? '#6c667e' : v < 0.35 ? '#827c95' : '#77718a';
-      ctx.fillRect(ox + x + 1, oy + y + 1, T - 2, T - 2);
-      if (v > 0.9) {
-        ctx.strokeStyle = '#4d475f';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(ox + x + 10, oy + y + 12);
-        ctx.lineTo(ox + x + 30, oy + y + 28);
-        ctx.lineTo(ox + x + 26, oy + y + 50);
-        ctx.stroke();
-      }
-    }
+function drawStreetChunk(ox, oy, CH, cx, cy, rnd) {
+  // 차선 (세 칸마다 한 줄씩 이어져요)
+  if (((cy % 3) + 3) % 3 === 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    for (let x = 0; x < CH; x += 96) ctx.fillRect(ox + x + 10, oy + CH / 2 - 3, 52, 6);
+  }
+  // 횡단보도
+  if (rnd() < 0.08) {
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    for (let i = 0; i < 6; i++) ctx.fillRect(ox + 30 + i * 32, oy + 40, 18, 90);
+  }
+  // 맨홀
+  if (rnd() < 0.3) {
+    const mx = ox + rnd() * CH, my = oy + rnd() * CH;
+    pathEllipse(ctx, mx, my, 16, 9);
+    fillStroke(ctx, '#7c7e88', 2, '#5a5c66');
+    ctx.strokeStyle = '#6a6c76'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(mx - 10, my); ctx.lineTo(mx + 10, my); ctx.moveTo(mx, my - 6); ctx.lineTo(mx, my + 6); ctx.stroke();
+  }
+  // 갈라진 틈
+  ctx.strokeStyle = 'rgba(60,60,70,0.35)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 2; i++) {
+    const x = ox + rnd() * CH, y = oy + rnd() * CH;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 10 + rnd() * 10, y + 6); ctx.lineTo(x + 18 + rnd() * 10, y + 2); ctx.stroke();
+  }
+  // 떨어진 벚꽃잎
+  ctx.fillStyle = '#ffc6d8';
+  for (let i = 0; i < 6; i++) {
+    pathEllipse(ctx, ox + rnd() * CH, oy + rnd() * CH, 3.5, 2, rnd() * Math.PI);
+    ctx.fill();
+  }
+  // 틈새 풀
+  ctx.strokeStyle = '#6f8f55'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  for (let i = 0; i < 2; i++) {
+    const gx = ox + rnd() * CH, gy = oy + rnd() * CH;
+    ctx.beginPath();
+    ctx.moveTo(gx - 3, gy); ctx.lineTo(gx - 5, gy - 6);
+    ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 8);
+    ctx.moveTo(gx + 3, gy); ctx.lineTo(gx + 5, gy - 6);
+    ctx.stroke();
   }
 }
 
+function drawBeachChunk(ox, oy, CH, rnd) {
+  // 조개껍데기
+  for (let i = 0; i < 3; i++) {
+    const x = ox + rnd() * CH, y = oy + rnd() * CH;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 4);
+    ctx.arc(x, y + 4, 7, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.closePath();
+    fillStroke(ctx, ['#fff4ea', '#ffd3d3', '#f6e0c0'][i % 3], 1.3, 'rgba(120,80,60,0.6)');
+  }
+  // 불가사리
+  if (rnd() < 0.35) {
+    const x = ox + rnd() * CH, y = oy + rnd() * CH;
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2 - Math.PI / 2;
+      const rr = k % 2 === 0 ? 9 : 4;
+      ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.7);
+    }
+    ctx.closePath();
+    fillStroke(ctx, '#ff8a5c', 1.4, 'rgba(120,50,30,0.6)');
+  }
+  // 조약돌
+  for (let i = 0; i < 4; i++) {
+    pathEllipse(ctx, ox + rnd() * CH, oy + rnd() * CH, 4 + rnd() * 4, 3 + rnd() * 2);
+    ctx.fillStyle = '#b9ab95'; ctx.fill();
+  }
+  // 떠밀려 온 해초
+  ctx.strokeStyle = '#5f8a4e'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  if (rnd() < 0.5) {
+    const x = ox + rnd() * CH, y = oy + rnd() * CH;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + 8, y - 6, x + 16, y); ctx.quadraticCurveTo(x + 24, y + 6, x + 30, y);
+    ctx.stroke();
+  }
+}
+
+function drawShrineChunk(ox, oy, CH, cx, rnd) {
+  // 자갈
+  ctx.fillStyle = 'rgba(70,66,80,0.35)';
+  for (let i = 0; i < 40; i++) {
+    pathEllipse(ctx, ox + rnd() * CH, oy + rnd() * CH, 1.8, 1.4);
+    ctx.fill();
+  }
+  // 참배길 돌판 (네 칸마다 세로로 이어져요)
+  if (((cx % 4) + 4) % 4 === 0) {
+    for (let y = 0; y < CH; y += 64) {
+      pathRRect(ctx, ox + CH / 2 - 40, oy + y + 6, 80, 52, 6);
+      fillStroke(ctx, '#a7a3ad', 2, 'rgba(60,55,70,0.6)');
+    }
+  }
+  // 낙엽
+  for (let i = 0; i < 5; i++) {
+    pathEllipse(ctx, ox + rnd() * CH, oy + rnd() * CH, 5, 2.6, rnd() * Math.PI);
+    ctx.fillStyle = ['#d9653b', '#e8a03a', '#b8442e'][i % 3];
+    ctx.fill();
+  }
+  // 이끼 낀 돌
+  if (rnd() < 0.5) {
+    const x = ox + rnd() * CH, y = oy + rnd() * CH;
+    pathEllipse(ctx, x, y, 12, 8);
+    fillStroke(ctx, '#77737f', 1.5, 'rgba(40,30,50,0.5)');
+    pathEllipse(ctx, x - 3, y - 4, 6, 3);
+    ctx.fillStyle = '#6f8f55'; ctx.fill();
+  }
+}
+
+// 손톱 공격 이펙트: 세 줄 할퀸 자국
 function drawSlash(e) {
   const p = G.player;
   const prog = e.t / e.life;
@@ -947,16 +1021,17 @@ function drawSlash(e) {
   const a1 = a0 + e.arc * e.dir * ease;
   ctx.save();
   ctx.translate(p.x, p.y - 16);
-  ctx.beginPath();
-  ctx.arc(0, 0, e.range, a0, a1, e.dir < 0);
-  ctx.arc(0, 0, e.range * 0.45, a1, a0, e.dir > 0);
-  ctx.closePath();
-  const g = ctx.createRadialGradient(0, 0, e.range * 0.4, 0, 0, e.range);
-  g.addColorStop(0, 'rgba(180,230,255,0)');
-  g.addColorStop(0.7, `rgba(200,240,255,${0.55 * (1 - prog)})`);
-  g.addColorStop(1, `rgba(255,255,255,${0.95 * (1 - prog)})`);
-  ctx.fillStyle = g;
-  ctx.fill();
+  ctx.lineCap = 'round';
+  [0.6, 0.78, 0.96].forEach((k) => {
+    ctx.beginPath();
+    ctx.arc(0, 0, e.range * k, a0, a1, e.dir < 0);
+    ctx.strokeStyle = `rgba(110,215,255,${0.5 * (1 - prog)})`;
+    ctx.lineWidth = 9 * (1 - prog) + 2;
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${0.95 * (1 - prog)})`;
+    ctx.lineWidth = 3.5 * (1 - prog) + 1;
+    ctx.stroke();
+  });
   ctx.restore();
 }
 
@@ -967,11 +1042,11 @@ function drawWorld() {
 
   drawGround();
 
-  // 수호의 빛 범위 미리보기 (스킬 준비되면 루나 발밑에 희미하게)
+  // 파도 장벽 범위 미리보기 (스킬 준비되면 히나코 발밑에 희미하게)
   const f = G.follower;
   if (G.player.skillTimer <= 0 && G.state === 'play') {
     pathEllipse(ctx, f.x, f.y, S().skillRadius, S().skillRadius * 0.5);
-    ctx.strokeStyle = `rgba(255,240,180,${0.25 + Math.sin(G.time * 5) * 0.1})`;
+    ctx.strokeStyle = `rgba(170,230,255,${0.35 + Math.sin(G.time * 5) * 0.1})`;
     ctx.lineWidth = 2;
     ctx.setLineDash([8, 8]);
     ctx.stroke();
@@ -1012,29 +1087,34 @@ function drawWorld() {
     ctx.restore();
   }
 
-  // 수호의 빛 이펙트 (바닥)
+  // 파도 장벽 이펙트 (바닥)
   for (const e of G.effects) {
     if (e.type !== 'ring') continue;
     const k = e.t / e.life;
     pathEllipse(ctx, e.x, e.y, e.r * (0.3 + k * 0.7), e.r * 0.5 * (0.3 + k * 0.7));
-    ctx.fillStyle = `rgba(255,240,170,${0.35 * (1 - k)})`;
+    ctx.fillStyle = `rgba(90,190,240,${0.35 * (1 - k)})`;
     ctx.fill();
     ctx.lineWidth = 6 * (1 - k) + 1;
-    ctx.strokeStyle = `rgba(255,255,220,${1 - k})`;
+    ctx.strokeStyle = `rgba(225,248,255,${1 - k})`;
+    ctx.stroke();
+    // 안쪽 물결
+    pathEllipse(ctx, e.x, e.y, e.r * 0.75 * (0.3 + k * 0.7), e.r * 0.375 * (0.3 + k * 0.7));
+    ctx.lineWidth = 3 * (1 - k) + 0.5;
+    ctx.strokeStyle = `rgba(140,215,255,${0.8 * (1 - k)})`;
     ctx.stroke();
   }
 
   // 캐릭터와 몬스터를 y좌표 순서로 그려요 (아래쪽에 있는 게 앞에 보이도록)
   const p = G.player;
   const list = [
-    { y: p.y, draw: () => Art.hero(ctx, { ...p, flash: false }) },
-    { y: f.y, draw: () => Art.luna(ctx, { ...f, flash: f.flash > 0 }) },
+    { y: p.y, draw: () => Art.shiori(ctx, { ...p, flash: false }) },
+    { y: f.y, draw: () => Art.hinako(ctx, { ...f, flash: f.flash > 0 }) },
   ];
   for (const m of G.monsters) list.push({ y: m.y, draw: () => drawMonster(m) });
   list.sort((a, b) => a.y - b.y);
   list.forEach((o) => o.draw());
 
-  // 루나 머리 위 체력바
+  // 히나코 머리 위 체력바
   const hpw = 44;
   const ratio = clamp(f.hp / S().followerMax, 0, 1);
   pathRRect(ctx, f.x - hpw / 2, f.y - 78, hpw, 7, 3);
@@ -1048,8 +1128,8 @@ function drawWorld() {
     for (const o of orbPositions()) {
       const g = ctx.createRadialGradient(o.x, o.y, 1, o.x, o.y, 16);
       g.addColorStop(0, 'rgba(255,255,255,1)');
-      g.addColorStop(0.4, 'rgba(200,170,255,0.9)');
-      g.addColorStop(1, 'rgba(160,120,255,0)');
+      g.addColorStop(0.4, 'rgba(150,220,255,0.9)');
+      g.addColorStop(1, 'rgba(80,170,240,0)');
       ctx.fillStyle = g;
       pathEllipse(ctx, o.x, o.y, 16, 16);
       ctx.fill();
@@ -1081,14 +1161,14 @@ function drawWorld() {
   ctx.restore();
 
   // 스테이지 분위기 색 덧칠
-  const tint = { forest: null, dusk: 'rgba(255,110,60,0.12)', ruins: 'rgba(50,20,90,0.22)' }[stage().theme];
+  const tint = { street: null, beach: 'rgba(255,110,60,0.14)', shrine: 'rgba(20,20,80,0.3)' }[stage().theme];
   if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); }
 }
 
 function drawMonster(m) {
   Art[m.def.draw](ctx, { ...m, flash: m.flash > 0 });
   // 단단한 몬스터는 맞으면 체력바 표시
-  if ((m.type === 'golem') && m.hp < m.maxHp) {
+  if ((m.type === 'oni') && m.hp < m.maxHp) {
     const w = 36, y = m.y - m.r * 2.3;
     ctx.fillStyle = '#2b2233';
     ctx.fillRect(m.x - w / 2, y, w, 5);
@@ -1126,26 +1206,26 @@ function drawHUD() {
   const f = G.follower, pg = G.progress, st = stage(), p = G.player;
   const t = G.time;
 
-  // 루나 얼굴 + 체력
+  // 히나코 얼굴 + 체력
   ctx.save();
   pathEllipse(ctx, 62, 62, 44, 44);
   ctx.fillStyle = '#3a2d52';
   ctx.fill();
   ctx.clip();
-  Art.portrait(ctx, 'luna', 62, 170, 0.36, f.hp / S().followerMax < 0.3 ? 'worry' : 'normal', t);
+  Art.portrait(ctx, 'hinako', 62, 170, 0.36, f.hp / S().followerMax < 0.3 ? 'worry' : 'normal', t);
   ctx.restore();
   pathEllipse(ctx, 62, 62, 44, 44);
   ctx.lineWidth = 4; ctx.strokeStyle = f.flash > 0 ? '#ff5a6e' : '#ffffff'; ctx.stroke();
 
   const ratio = f.hp / S().followerMax;
-  drawText(CHARACTERS.luna.name, 116, 46, 24, '#ffd6ec');
+  drawText(CHARACTERS.hinako.name, 116, 46, 24, '#ffe2c8');
   drawBar(116, 56, 300, 26, ratio, ratio > 0.5 ? '#6cff8f' : ratio > 0.25 ? '#ffd23f' : '#ff5a6e');
   drawText(`${Math.ceil(f.hp)} / ${S().followerMax}`, 266, 76, 18, '#fff', 'center', FONT_TITLE, 4);
 
   // 가운데: 스테이지 이름 + 남은 시간 or 보스 체력
   drawText(st.name, W / 2, 38, 24, '#ffffff', 'center');
   if (G.boss && !G.boss.dead) {
-    drawText('그림자 기사', W / 2, 66, 20, '#ff9bb0', 'center');
+    drawText(MONSTER_TYPES.boss.name, W / 2, 66, 20, '#ff9bb0', 'center');
     drawBar(W / 2 - 250, 74, 500, 20, G.boss.hp / G.boss.maxHp, '#ff4d6d');
   } else if (st.bossAt != null && !G.bossSpawned) {
     drawText(`보스 출현까지 ${formatTime(st.bossAt - G.time)}`, W / 2, 72, 26, '#ffd23f', 'center');
@@ -1164,23 +1244,23 @@ function drawHUD() {
   const sx = 60, sy = H - 90, r = 34;
   const cd = clamp(p.skillTimer / S().skillCd, 0, 1);
   pathEllipse(ctx, sx, sy, r, r);
-  ctx.fillStyle = cd <= 0 ? '#ffe79a' : '#5b4d70';
+  ctx.fillStyle = cd <= 0 ? '#9fe3ff' : '#4d5a70';
   ctx.fill();
   if (cd > 0) {
     ctx.beginPath();
     ctx.moveTo(sx, sy);
     ctx.arc(sx, sy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - cd));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(255,231,154,0.6)';
+    ctx.fillStyle = 'rgba(159,227,255,0.6)';
     ctx.fill();
   }
   pathEllipse(ctx, sx, sy, r, r);
   ctx.lineWidth = 3.5; ctx.strokeStyle = cd <= 0 ? '#ffffff' : '#a99cc0'; ctx.stroke();
-  drawText('✨', sx, sy + 10, 28, '#fff', 'center', FONT_TITLE, 0);
+  drawText('🌊', sx, sy + 10, 28, '#fff', 'center', FONT_TITLE, 0);
   drawText('X', sx + 26, sy + 30, 20, '#ffffff', 'center');
-  drawText(cd <= 0 ? '수호의 빛 준비!' : `${Math.ceil(p.skillTimer)}초`, sx + 48, sy + 8, 18, cd <= 0 ? '#ffe79a' : '#cfc4e0', 'left', FONT_TITLE, 4);
+  drawText(cd <= 0 ? '파도 장벽 준비!' : `${Math.ceil(p.skillTimer)}초`, sx + 48, sy + 8, 18, cd <= 0 ? '#9fe3ff' : '#cfc4e0', 'left', FONT_TITLE, 4);
 
-  // 루나 체력이 낮으면 화면 가장자리가 빨갛게
+  // 히나코 체력이 낮으면 화면 가장자리가 빨갛게
   if (ratio < 0.3) {
     const a = 0.25 + Math.sin(G.time * 8) * 0.12;
     const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.9);
@@ -1269,7 +1349,7 @@ function drawStory() {
   // 일러스트: 말하는 사람은 밝고 조금 크게, 아닌 사람은 어둡게
   const speaker = line.who;
   const pop = Math.min(1, st.lineTime * 6);
-  [['leon', 300], ['luna', W - 300]].forEach(([who, x]) => {
+  [['shiori', 300], ['hinako', W - 300]].forEach(([who, x]) => {
     const isSpeaker = speaker === who;
     const face = isSpeaker ? line.face : 'normal';
     const lift = isSpeaker ? -10 * pop : 0;
@@ -1284,7 +1364,7 @@ function drawStory() {
 
   if (speaker) {
     const c = CHARACTERS[speaker];
-    const nx = speaker === 'leon' ? bx + 30 : bx + bw - 210;
+    const nx = speaker === 'shiori' ? bx + 30 : bx + bw - 210;
     pathRRect(ctx, nx, by - 26, 180, 48, 16);
     fillStroke(ctx, c.color, 4, '#ffffff');
     drawText(c.name, nx + 90, by + 9, 30, '#ffffff', 'center', FONT_TITLE, 0);
@@ -1313,44 +1393,63 @@ function drawStory() {
 // ---------- 타이틀 / 엔딩 / 게임오버 ----------
 function drawTitle() {
   const t = G.stateTime;
-  ctx.fillStyle = linGrad(ctx, 0, 0, 0, H, '#2a1f45', '#6e4c8f');
+  // 밤바다 하늘
+  ctx.fillStyle = linGrad(ctx, 0, 0, 0, H * 0.55, '#1c2147', '#6a5596');
   ctx.fillRect(0, 0, W, H);
-  // 별
   for (let i = 0; i < 60; i++) {
-    const x = (i * 211) % W, y = (i * 137) % (H * 0.6);
+    const x = (i * 211) % W, y = (i * 137) % (H * 0.45);
     ctx.fillStyle = `rgba(255,255,255,${0.3 + 0.3 * Math.sin(t * 2 + i)})`;
     pathEllipse(ctx, x, y, 1.5, 1.5); ctx.fill();
   }
   // 달
-  pathEllipse(ctx, W - 200, 140, 70, 70);
-  ctx.fillStyle = '#fff3c4'; ctx.fill();
-  pathEllipse(ctx, W - 175, 125, 64, 64);
-  ctx.fillStyle = '#3a2a5a'; ctx.fill();
-
-  // 언덕
-  ctx.fillStyle = '#3e6b4a';
+  const moonX = W - 220;
+  pathEllipse(ctx, moonX, 130, 60, 60);
+  ctx.fillStyle = '#fff6d6'; ctx.fill();
+  // 바다
+  const seaTop = H * 0.52;
+  ctx.fillStyle = linGrad(ctx, 0, seaTop, 0, H - 150, '#3a5d9c', '#1c2f5c');
+  ctx.fillRect(0, seaTop, W, H - 150 - seaTop);
+  // 달빛이 바다에 비쳐 반짝반짝
+  for (let i = 0; i < 14; i++) {
+    const y = seaTop + 8 + i * 13;
+    const w = 70 - i * 3 + Math.sin(t * 3 + i) * 10;
+    ctx.fillStyle = `rgba(255,246,214,${0.55 - i * 0.03})`;
+    ctx.fillRect(moonX - w / 2 + Math.sin(t * 2 + i * 1.7) * 6, y, w, 3);
+  }
+  // 잔물결
+  ctx.strokeStyle = 'rgba(160,200,255,0.35)'; ctx.lineWidth = 2;
+  for (let i = 0; i < 18; i++) {
+    const x = ((i * 157 + t * 20) % (W + 60)) - 30, y = seaTop + 20 + ((i * 53) % 150);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 12, y - 4, x + 24, y); ctx.stroke();
+  }
+  // 모래사장
+  ctx.fillStyle = '#d9bf8c';
   ctx.beginPath();
   ctx.moveTo(0, H);
-  ctx.lineTo(0, H - 220);
-  ctx.quadraticCurveTo(W * 0.3, H - 300, W * 0.6, H - 230);
-  ctx.quadraticCurveTo(W * 0.85, H - 180, W, H - 240);
+  ctx.lineTo(0, H - 150);
+  ctx.quadraticCurveTo(W * 0.5, H - 175 + Math.sin(t * 1.5) * 4, W, H - 150);
   ctx.lineTo(W, H);
   ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, H - 150);
+  ctx.quadraticCurveTo(W * 0.5, H - 175 + Math.sin(t * 1.5) * 4, W, H - 150);
+  ctx.stroke();
 
-  // 걸어가는 두 사람
+  // 나란히 걸어가는 두 사람
   ctx.save();
-  ctx.translate(W / 2 + 40, H - 120);
+  ctx.translate(W / 2 + 40, H - 70);
   ctx.scale(2.6, 2.6);
-  Art.luna(ctx, { x: -40, y: 0, t, moving: true, dirX: 1, back: false, flash: false });
-  Art.hero(ctx, { x: 10, y: 0, t: t + 0.2, moving: true, dirX: 1, back: false, flash: false, swing: 0 });
+  Art.hinako(ctx, { x: -40, y: 0, t, moving: true, dirX: 1, back: false, flash: false });
+  Art.shiori(ctx, { x: 10, y: 0, t: t + 0.2, moving: true, dirX: 1, back: false, flash: false, swing: 0, claw: 0 });
   ctx.restore();
 
   const bob = Math.sin(t * 2) * 6;
-  drawText('수호자의 길', W / 2, 200 + bob, 104, '#fff3c4', 'center', FONT_TITLE, 10);
-  drawText('~ 달의 무녀를 지켜라 ~', W / 2, 255 + bob, 30, '#e8dcff', 'center', FONT_TITLE, 6);
+  drawText('지켜줄게요, 히나코', W / 2, 170 + bob, 92, '#e6f4ff', 'center', FONT_TITLE, 10);
+  drawText('~ 「나를 먹고 싶은, 괴물」 팬게임 ~', W / 2, 225 + bob, 28, '#d8d0ff', 'center', FONT_TITLE, 6);
 
-  if (Math.floor(t * 2) % 2 === 0) drawText('Z 키를 눌러 시작', W / 2, 340, 34, '#ffffff', 'center');
-  drawText('방향키: 이동   Z: 공격   X: 수호의 빛   ESC: 메뉴   M: 소리 끄기', W / 2, H - 24, 20, 'rgba(255,255,255,0.85)', 'center', FONT_TITLE, 4);
+  if (Math.floor(t * 2) % 2 === 0) drawText('Z 키를 눌러 시작', W / 2, 310, 34, '#ffffff', 'center');
+  drawText('방향키: 이동   Z: 손톱 공격   X: 파도 장벽   ESC: 메뉴   M: 소리 끄기', W / 2, H - 20, 20, 'rgba(255,255,255,0.9)', 'center', FONT_TITLE, 4);
 }
 
 function drawGameOver() {
@@ -1358,8 +1457,8 @@ function drawGameOver() {
   ctx.fillStyle = `rgba(20,5,15,${0.75 * a})`;
   ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = a;
-  Art.portrait(ctx, 'luna', W / 2, H + 60, 0.9, 'worry', G.stateTime);
-  drawText('루나를 지키지 못했다…', W / 2, 200, 64, '#ff9bb0', 'center', FONT_TITLE, 8);
+  Art.portrait(ctx, 'hinako', W / 2, H + 60, 0.9, 'worry', G.stateTime);
+  drawText('히나코를 지키지 못했다…', W / 2, 200, 64, '#ff9bb0', 'center', FONT_TITLE, 8);
   if (G.stateTime > 1.0) {
     drawText('Z : 이 스테이지 다시 하기     X : 타이틀로', W / 2, 270, 28, '#ffffff', 'center');
   }
@@ -1373,8 +1472,8 @@ function drawEnding() {
   // 떠오르는 해
   pathEllipse(ctx, W / 2, H - 120 - Math.min(80, t * 20), 160, 160);
   ctx.fillStyle = 'rgba(255,240,170,0.9)'; ctx.fill();
-  Art.portrait(ctx, 'leon', W / 2 - 230, H + 40, 0.95, 'smile', t);
-  Art.portrait(ctx, 'luna', W / 2 + 230, H + 40, 0.95, 'smile', t);
+  Art.portrait(ctx, 'shiori', W / 2 - 230, H + 40, 0.95, 'smirk', t);
+  Art.portrait(ctx, 'hinako', W / 2 + 230, H + 40, 0.95, 'smile', t);
   drawText('THE END', W / 2, 150, 96, '#ffffff', 'center', FONT_TITLE, 10);
   drawText(`최종 레벨 ${G.progress.level}   ·   쓰러뜨린 몬스터 ${G.progress.kills}마리`, W / 2, 210, 28, '#ffffff', 'center');
   drawText('플레이해 줘서 고마워요!', W / 2, 255, 26, '#fff3c4', 'center');
