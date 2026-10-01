@@ -13,16 +13,32 @@ const KEYMAP = {
   skill: ['KeyX', 'KeyA'],              // 스킬: 수호의 빛
   confirm: ['KeyZ', 'Enter', 'Space'],  // 대화 넘기기 / 선택
   back: ['KeyX', 'Backspace'],
-  skip: ['Escape'],                     // 대화 건너뛰기
-  pause: ['Escape', 'KeyP'],
+  skip: ['KeyS'],                       // 스토리 건너뛰기
+  pause: ['Escape', 'KeyP'],            // 일시정지 메뉴 열기/닫기
   mute: ['KeyM'],
 };
 
 const Input = {
   down: new Set(),    // 지금 눌려 있는 키
   pressed: new Set(), // 이번 프레임에 "새로" 눌린 키
+  // 마우스: 게임 화면 기준 좌표(1280x720)로 바꿔서 저장해요
+  mouse: { x: -1, y: -1, clicked: false, moved: false },
 
   init() {
+    const toGame = (e) => {
+      const canvas = document.getElementById('game');
+      const rect = canvas.getBoundingClientRect();
+      this.mouse.x = ((e.clientX - rect.left) / rect.width) * 1280;
+      this.mouse.y = ((e.clientY - rect.top) / rect.height) * 720;
+    };
+    window.addEventListener('mousemove', (e) => { toGame(e); this.mouse.moved = true; });
+    window.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      toGame(e);
+      this.mouse.clicked = true;
+      Sound.unlock();
+    });
+
     window.addEventListener('keydown', (e) => {
       // 방향키·스페이스로 페이지가 스크롤되지 않게 막기
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -46,6 +62,8 @@ const Input = {
   // 매 프레임 끝에 호출해서 "새로 눌림" 기록을 지워요
   endFrame() {
     this.pressed.clear();
+    this.mouse.clicked = false;
+    this.mouse.moved = false;
   },
 };
 

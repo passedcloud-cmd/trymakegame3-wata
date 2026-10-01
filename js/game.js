@@ -9,6 +9,7 @@
 //   title → story(프롤로그) → play ⇄ levelup / paused
 //         → clear → story(클리어 대화) → 다음 스테이지 …
 //   play 중 루나 체력 0 → gameover
+//   play / story / levelup 중 ESC → paused(일시정지 메뉴) → 원래 상태로 복귀
 // =====================================================
 
 const W = 1280, H = 720;
@@ -149,11 +150,18 @@ function updateStory(dt) {
   st.lineTime += dt;
   if (Math.floor(st.shown) !== before && st.shown < line.text.length && Math.floor(st.shown) % 2 === 0) Sound.text();
 
-  if (Input.wasPressed('skip')) {
+  if (Input.wasPressed('pause')) {
+    openPause();
+    return;
+  }
+  const clicked = Input.mouse.clicked;
+  if (Input.wasPressed('skip') || (clicked && isHover(SKIP_BTN))) {
+    Sound.select();
     st.onDone();
     return;
   }
-  if (Input.wasPressed('confirm') && G.stateTime > 0.25) {
+  // Z 키 또는 화면 아무 곳이나 클릭하면 다음 대사로
+  if ((Input.wasPressed('confirm') || clicked) && G.stateTime > 0.25) {
     if (st.shown < line.text.length) {
       st.shown = line.text.length; // 아직 다 안 나왔으면 한 번에 보여주기
     } else {
@@ -212,7 +220,7 @@ function updatePlay(dt) {
     return;
   }
 
-  if (Input.wasPressed('pause')) setState('paused');
+  if (Input.wasPressed('pause')) openPause();
 }
 
 // ---------- 플레이어(레온) ----------
@@ -673,6 +681,99 @@ function updateCamera(dt) {
 }
 
 // =====================================================
+// 버튼 & 일시정지 메뉴
+// =====================================================
+
+// 스토리 화면 오른쪽 위 "건너뛰기" 버튼 위치
+const SKIP_BTN = { x: W - 210, y: 22, w: 180, h: 52 };
+
+const PAUSE_ITEMS = [
+  { id: 'resume', label: '계속하기' },
+  { id: 'title', label: '메인화면으로' },
+  { id: 'quit', label: '게임 종료' },
+];
+function pauseButtonRect(i) {
+  return { x: W / 2 - 180, y: 270 + i * 92, w: 360, h: 72 };
+}
+
+// 마우스가 버튼 위에 있는지 확인
+function isHover(b) {
+  const m = Input.mouse;
+  return m.x >= b.x && m.x <= b.x + b.w && m.y >= b.y && m.y <= b.y + b.h;
+}
+
+function openPause() {
+  // 지금 상태를 기억해 두고, 메뉴를 닫으면 그대로 돌아가요
+  G.pause = { from: G.state, sel: 0, t: 0 };
+  G.state = 'paused';
+  G.shake = 0;
+  Sound.select();
+}
+
+function closePause() {
+  G.state = G.pause.from;
+  Input.pressed.clear(); // 메뉴를 닫은 키가 게임에 바로 전달되지 않게
+}
+
+function updatePause(dt) {
+  const pm = G.pause;
+  pm.t += dt;
+  if (Input.wasPressed('pause')) { closePause(); return; }
+
+  const n = PAUSE_ITEMS.length;
+  if (Input.wasPressed('up')) { pm.sel = (pm.sel + n - 1) % n; Sound.select(); }
+  if (Input.wasPressed('down')) { pm.sel = (pm.sel + 1) % n; Sound.select(); }
+
+  let chosen = -1;
+  PAUSE_ITEMS.forEach((item, i) => {
+    const r = pauseButtonRect(i);
+    if (Input.mouse.moved && isHover(r) && pm.sel !== i) { pm.sel = i; Sound.select(); }
+    if (Input.mouse.clicked && isHover(r)) chosen = i;
+  });
+  if (Input.wasPressed('confirm') && pm.t > 0.15) chosen = pm.sel;
+  if (chosen < 0) return;
+
+  const id = PAUSE_ITEMS[chosen].id;
+  if (id === 'resume') closePause();
+  else if (id === 'title') { Sound.select(); setState('title'); }
+  else if (id === 'quit') quitGame();
+}
+
+function quitGame() {
+  // 브라우저 보안 때문에 탭이 안 닫힐 수도 있어요. 그럴 땐 종료 화면을 보여줘요.
+  setState('quit');
+  try { window.close(); } catch (e) { /* 닫기 실패해도 괜찮아요 */ }
+}
+
+function drawButton(r, label, selected, color = '#3a2d52') {
+  const lift = selected ? -3 : 0;
+  pathRRect(ctx, r.x, r.y + lift, r.w, r.h, r.h / 2);
+  fillStroke(ctx, selected ? '#fff6dc' : '#e9e2f5', selected ? 5 : 3, selected ? '#ffb83f' : '#2b2233');
+  drawText(label, r.x + r.w / 2, r.y + lift + r.h / 2 + 11, 32, color, 'center', FONT_TITLE, 0);
+  if (selected) drawText('▶', r.x + 36, r.y + lift + r.h / 2 + 10, 26, '#ffb83f', 'center', FONT_TITLE, 0);
+}
+
+function drawPauseMenu() {
+  ctx.fillStyle = 'rgba(15,10,25,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  drawText('일시정지', W / 2, 200, 76, '#ffffff', 'center', FONT_TITLE, 8);
+  PAUSE_ITEMS.forEach((item, i) => {
+    drawButton(pauseButtonRect(i), item.label, i === G.pause.sel, item.id === 'quit' ? '#b8354e' : '#3a2d52');
+  });
+  drawText('↑ ↓ 고르기   Z 결정   ESC 계속하기   (마우스 클릭도 돼요)', W / 2, H - 60, 22, 'rgba(255,255,255,0.85)', 'center', FONT_TITLE, 4);
+}
+
+function drawQuit() {
+  ctx.fillStyle = '#0d0a14';
+  ctx.fillRect(0, 0, W, H);
+  drawText('게임을 종료했어요', W / 2, H / 2 - 20, 56, '#ffffff', 'center', FONT_TITLE, 0);
+  drawText('이제 브라우저 탭을 닫아도 돼요.', W / 2, H / 2 + 36, 26, '#cfc4e0', 'center', FONT_BODY, 0);
+  if (G.stateTime > 1 && Math.floor(G.stateTime * 2) % 2 === 0) {
+    drawText('다시 하려면 Z 키', W / 2, H / 2 + 110, 24, '#ffe27a', 'center', FONT_TITLE, 0);
+  }
+}
+
+// =====================================================
 // 레벨업
 // =====================================================
 
@@ -689,6 +790,7 @@ function openLevelUp() {
 }
 
 function updateLevelUp() {
+  if (Input.wasPressed('pause')) { openPause(); return; }
   const lu = G.levelUp;
   if (lu.choices.length === 0) {
     // 모든 강화를 다 찍었으면 루나 체력 회복으로 대신
@@ -713,7 +815,7 @@ function updateLevelUp() {
 // =====================================================
 
 function update(dt) {
-  G.stateTime += dt;
+  if (G.state !== 'paused') G.stateTime += dt; // 일시정지 중엔 시간이 멈춰요
   if (Input.wasPressed('mute')) Sound.muted = !Sound.muted;
 
   switch (G.state) {
@@ -730,7 +832,10 @@ function update(dt) {
       updateLevelUp();
       break;
     case 'paused':
-      if (Input.wasPressed('pause') || Input.wasPressed('confirm')) setState('play');
+      updatePause(dt);
+      break;
+    case 'quit':
+      if (G.stateTime > 1 && Input.wasPressed('confirm')) setState('title');
       break;
     case 'clear':
       updateEffects(dt);
@@ -1086,7 +1191,7 @@ function drawHUD() {
   }
 
   // 스테이지 시작 / 보스 경고 배너
-  if (G.banner && G.banner.t < 2.6) {
+  if (G.banner && G.banner.t < 2.6 && G.state !== 'paused') {
     const b = G.banner;
     const a = b.t < 0.3 ? b.t / 0.3 : b.t > 2.1 ? (2.6 - b.t) / 0.5 : 1;
     ctx.globalAlpha = clamp(a, 0, 1);
@@ -1195,7 +1300,14 @@ function drawStory() {
   if (st.shown >= line.text.length && Math.floor(t * 2.5) % 2 === 0) {
     drawText('▼', bx + bw - 40, by + bh - 22, 24, '#ffe27a', 'center', FONT_TITLE, 0);
   }
-  drawText('Z: 다음   ESC: 건너뛰기', W - 30, 34, 18, 'rgba(255,255,255,0.8)', 'right', FONT_TITLE, 4);
+  // 오른쪽 위 건너뛰기 버튼
+  const hover = isHover(SKIP_BTN) && G.state === 'story';
+  const b = SKIP_BTN;
+  pathRRect(ctx, b.x, b.y, b.w, b.h, b.h / 2);
+  fillStroke(ctx, hover ? 'rgba(255,246,220,0.95)' : 'rgba(25,18,40,0.75)', 3, hover ? '#ffb83f' : '#ffffff');
+  drawText('건너뛰기 ▶▶', b.x + b.w / 2, b.y + 35, 26, hover ? '#3a2d52' : '#ffffff', 'center', FONT_TITLE, 0);
+  drawText('S 키', b.x + b.w / 2, b.y + b.h + 24, 18, 'rgba(255,255,255,0.85)', 'center', FONT_TITLE, 4);
+  drawText('Z / 클릭: 다음   ESC: 메뉴', 30, 40, 20, 'rgba(255,255,255,0.85)', 'left', FONT_TITLE, 4);
 }
 
 // ---------- 타이틀 / 엔딩 / 게임오버 ----------
@@ -1238,7 +1350,7 @@ function drawTitle() {
   drawText('~ 달의 무녀를 지켜라 ~', W / 2, 255 + bob, 30, '#e8dcff', 'center', FONT_TITLE, 6);
 
   if (Math.floor(t * 2) % 2 === 0) drawText('Z 키를 눌러 시작', W / 2, 340, 34, '#ffffff', 'center');
-  drawText('방향키: 이동   Z: 공격   X: 수호의 빛   ESC: 일시정지   M: 소리 끄기', W / 2, H - 24, 20, 'rgba(255,255,255,0.85)', 'center', FONT_TITLE, 4);
+  drawText('방향키: 이동   Z: 공격   X: 수호의 빛   ESC: 메뉴   M: 소리 끄기', W / 2, H - 24, 20, 'rgba(255,255,255,0.85)', 'center', FONT_TITLE, 4);
 }
 
 function drawGameOver() {
@@ -1273,7 +1385,18 @@ function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
-  switch (G.state) {
+  if (G.state === 'paused') {
+    drawScene(G.pause.from); // 멈춘 화면을 뒤에 그대로 보여주고
+    drawPauseMenu();         // 그 위에 메뉴를 덮어요
+  } else {
+    drawScene(G.state);
+  }
+
+  if (Sound.muted) drawText('🔇', W - 30, H - 50, 24, '#fff', 'right', FONT_TITLE, 0);
+}
+
+function drawScene(state) {
+  switch (state) {
     case 'title':
       drawTitle();
       break;
@@ -1282,32 +1405,26 @@ function render() {
       break;
     case 'play':
     case 'levelup':
-    case 'paused':
     case 'clear':
     case 'gameover':
       drawWorld();
-      if (G.state !== 'gameover') drawHUD();
-      if (G.state === 'levelup') drawLevelUp();
-      if (G.state === 'paused') {
-        ctx.fillStyle = 'rgba(15,10,25,0.6)';
-        ctx.fillRect(0, 0, W, H);
-        drawText('일시정지', W / 2, H / 2, 72, '#ffffff', 'center', FONT_TITLE, 8);
-        drawText('ESC 또는 Z 를 눌러 계속하기', W / 2, H / 2 + 50, 26, '#ffffff', 'center');
-      }
-      if (G.state === 'clear') {
+      if (state !== 'gameover') drawHUD();
+      if (state === 'levelup') drawLevelUp();
+      if (state === 'clear') {
         const k = Math.min(1, G.stateTime * 3);
         ctx.fillStyle = `rgba(255,250,220,${0.25 * k})`;
         ctx.fillRect(0, 0, W, H);
         drawText('STAGE CLEAR!', W / 2, H / 2 - 20, 60 + 30 * k, '#ffe27a', 'center', FONT_TITLE, 10);
       }
-      if (G.state === 'gameover') drawGameOver();
+      if (state === 'gameover') drawGameOver();
       break;
     case 'ending':
       drawEnding();
       break;
+    case 'quit':
+      drawQuit();
+      break;
   }
-
-  if (Sound.muted) drawText('🔇', W - 30, H - 50, 24, '#fff', 'right', FONT_TITLE, 0);
 }
 
 // =====================================================
