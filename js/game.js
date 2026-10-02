@@ -46,7 +46,6 @@ const FEEL = {
   knockback: 620,       // 손톱에 맞은 요괴가 밀려나는 힘
   lunge: 260,           // 공격할 때 앞으로 내딛는 힘
   swingTime: 0.13,      // 손톱 휘두르는 동작 시간
-  aimRange: 110,        // 자동 조준: 공격 범위 + 이만큼 안의 가장 가까운 요괴를 노려요
   dashSpeed: 950,       // 대시 속도
   dashTime: 0.15,       // 대시 지속 시간
   dashCooldown: 0.7,    // 대시 대기 시간
@@ -342,22 +341,9 @@ function updatePlayer(dt) {
   }
 }
 
-// 자동 조준: 가까운 요괴 쪽으로 휘둘러요. 없으면 바라보는 방향으로.
-function findAimTarget(p) {
-  const maxD = S().range + FEEL.aimRange;
-  let best = null, bestD = maxD;
-  for (const m of G.monsters) {
-    if (m.dead) continue;
-    const d = Math.hypot(m.x - p.x, m.y - p.y) - m.r;
-    if (d < bestD) { bestD = d; best = m; }
-  }
-  return best;
-}
-
 function slashAttack(p) {
   const s = S();
-  const target = findAimTarget(p);
-  const ang = target ? Math.atan2(target.y - p.y, target.x - p.x) : Math.atan2(p.fy, p.fx);
+  const ang = Math.atan2(p.fy, p.fx); // 시오리가 바라보는 방향으로 휘둘러요
   const ax = Math.cos(ang), ay = Math.sin(ang);
   // 공격 방향을 바라보고, 앞으로 살짝 내딛기
   p.aimAng = ang;
