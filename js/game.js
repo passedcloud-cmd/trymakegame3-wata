@@ -36,6 +36,25 @@ const FOLLOW_DIST = 54;     // 히나코가 시오리 뒤로 얼마나 떨어져
 const FOLLOWER_IFRAME = 0.35; // 히나코가 맞은 뒤 잠깐 무적인 시간
 const MAX_MONSTERS = 220;
 
+// ---------- 손맛(타격감·조작감) 설정 ----------
+// 숫자를 바꿔 보면서 마음에 드는 느낌을 찾아보세요!
+const FEEL = {
+  hitstop: 0.045,       // 때렸을 때 화면이 멈추는 시간(초) — 타격감의 핵심
+  hitstopCrit: 0.075,   // 치명타일 때 멈추는 시간
+  hitstopHeavy: 0.09,   // 오니처럼 큰 요괴를 쓰러뜨렸을 때
+  hitstopBoss: 0.45,    // 보스를 쓰러뜨렸을 때
+  knockback: 620,       // 손톱에 맞은 요괴가 밀려나는 힘
+  lunge: 260,           // 공격할 때 앞으로 내딛는 힘
+  swingTime: 0.13,      // 손톱 휘두르는 동작 시간
+  aimRange: 110,        // 자동 조준: 공격 범위 + 이만큼 안의 가장 가까운 요괴를 노려요
+  dashSpeed: 950,       // 대시 속도
+  dashTime: 0.15,       // 대시 지속 시간
+  dashCooldown: 0.7,    // 대시 대기 시간
+  inputBuffer: 0.18,    // 공격 키를 미리 눌러도 이 시간 동안 기억해요
+  camFollow: 12,        // 카메라가 따라오는 빠르기 (클수록 딱 붙어요)
+  camLead: 45,          // 이동 방향으로 카메라가 살짝 앞서가는 거리
+};
+
 // ---------- 작은 도구 함수들 ----------
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -100,7 +119,13 @@ function retryStage() {
 }
 
 function resetWorld() {
-  G.player = { x: 0, y: 0, fx: 1, fy: 0, dirX: 1, back: false, moving: false, t: 0, atkTimer: 0, swing: 0, swingDir: 1, claw: 0, skillTimer: 2 };
+  G.player = {
+    x: 0, y: 0, fx: 1, fy: 0, dirX: 1, back: false, moving: false, t: 0,
+    atkTimer: 0, swing: 0, swingDir: 1, claw: 0, skillTimer: 2,
+    vx: 0, vy: 0,                         // 내딛기 등으로 생기는 추가 속도
+    dashT: 0, dashCd: 0, dashVx: 0, dashVy: 0, ghostT: 0,
+    atkBuffer: 0,
+  };
   G.follower = { x: -FOLLOW_DIST, y: 0, hp: S().followerMax, dirX: 1, back: false, moving: false, t: 0, flash: 0, iframe: 0 };
   G.trail = [{ x: -FOLLOW_DIST, y: 0 }, { x: 0, y: 0 }];
   G.monsters = [];
@@ -110,7 +135,10 @@ function resetWorld() {
   G.particles = [];
   G.texts = [];
   G.cam = { x: 0, y: 0 };
+  G.camLead = { x: 0, y: 0 };
   G.shake = 0;
+  G.hitstop = 0;
+  G.ghosts = [];
   G.time = 0;
   G.spawnTimer = 1.0;
   G.boss = null;
@@ -178,7 +206,18 @@ function updateStory(dt) {
 // 플레이 업데이트
 // =====================================================
 
+function addHitstop(t) {
+  G.hitstop = Math.max(G.hitstop, t);
+}
+
 function updatePlay(dt) {
+  // 히트스톱: 때린 순간 아주 잠깐 모든 게 멈춰요 (화면 흔들림만 계속)
+  if (G.hitstop > 0) {
+    G.hitstop -= dt;
+    if (Input.wasPressed('attack')) G.player.atkBuffer = FEEL.inputBuffer;
+    if (Input.wasPressed('pause')) openPause();
+    return;
+  }
   G.time += dt;
   if (G.banner) G.banner.t += dt;
 
@@ -234,12 +273,44 @@ function updatePlayer(dt) {
   if (p.moving) {
     const len = Math.hypot(ix, iy); // 대각선이 더 빠르지 않게 길이를 1로 맞춰요
     ix /= len; iy /= len;
-    p.x += ix * s.speed * dt;
-    p.y += iy * s.speed * dt;
     p.fx = ix; p.fy = iy;
-    if (ix !== 0) p.dirX = Math.sign(ix);
-    p.back = iy < 0;
+    if (p.dashT <= 0) {
+      p.x += ix * s.speed * dt;
+      p.y += iy * s.speed * dt;
+    }
+    // 공격 중에는 공격 방향을 바라보게 두고, 아닐 때만 이동 방향을 봐요
+    if (ix !== 0 && p.swing <= 0) p.dirX = Math.sign(ix);
+    if (p.swing <= 0) p.back = iy < 0;
   }
+
+  // 대시 (C): 짧게 휙! 대시 중엔 요괴 사이를 통과해요
+  p.dashCd -= dt;
+  if (Input.wasPressed('dash') && p.dashCd <= 0) {
+    p.dashT = FEEL.dashTime;
+    p.dashCd = FEEL.dashCooldown;
+    p.dashVx = p.fx * FEEL.dashSpeed;
+    p.dashVy = p.fy * FEEL.dashSpeed;
+    p.ghostT = 0;
+    Sound.dash();
+    burst(p.x, p.y - 10, '#bfefff', 6);
+  }
+  if (p.dashT > 0) {
+    p.dashT -= dt;
+    p.x += p.dashVx * dt;
+    p.y += p.dashVy * dt;
+    // 잔상 남기기
+    p.ghostT -= dt;
+    if (p.ghostT <= 0) {
+      p.ghostT = 0.025;
+      G.ghosts.push({ x: p.x, y: p.y, dirX: p.dirX, back: p.back, t: 0, life: 0.22, pt: p.t, claw: p.claw });
+    }
+  }
+
+  // 내딛기 등으로 생긴 추가 속도 (빠르게 줄어들어요)
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  const decay = Math.exp(-14 * dt);
+  p.vx *= decay; p.vy *= decay;
 
   // 지나간 길을 기록 → 히나코가 이 길을 그대로 따라와요
   const last = G.trail[G.trail.length - 1];
@@ -250,9 +321,12 @@ function updatePlayer(dt) {
 
   // 공격 (Z)
   p.atkTimer -= dt;
-  p.swing = Math.max(0, p.swing - dt / 0.18);
+  p.atkBuffer -= dt;
+  if (Input.wasPressed('attack')) p.atkBuffer = FEEL.inputBuffer; // 조금 일찍 눌러도 기억해 둬요
+  p.swing = Math.max(0, p.swing - dt / FEEL.swingTime);
   p.claw = Math.max(0, p.claw - dt); // 공격을 멈추고 조금 지나면 팔이 사람 모습으로 돌아와요
-  if (Input.isDown('attack') && p.atkTimer <= 0) {
+  if ((Input.isDown('attack') || p.atkBuffer > 0) && p.atkTimer <= 0) {
+    p.atkBuffer = 0;
     p.atkTimer = s.atkCd;
     p.swing = 1;
     p.claw = 1.5;
@@ -268,12 +342,34 @@ function updatePlayer(dt) {
   }
 }
 
+// 자동 조준: 가까운 요괴 쪽으로 휘둘러요. 없으면 바라보는 방향으로.
+function findAimTarget(p) {
+  const maxD = S().range + FEEL.aimRange;
+  let best = null, bestD = maxD;
+  for (const m of G.monsters) {
+    if (m.dead) continue;
+    const d = Math.hypot(m.x - p.x, m.y - p.y) - m.r;
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return best;
+}
+
 function slashAttack(p) {
   const s = S();
-  const ang = Math.atan2(p.fy, p.fx);
+  const target = findAimTarget(p);
+  const ang = target ? Math.atan2(target.y - p.y, target.x - p.x) : Math.atan2(p.fy, p.fx);
+  const ax = Math.cos(ang), ay = Math.sin(ang);
+  // 공격 방향을 바라보고, 앞으로 살짝 내딛기
+  p.aimAng = ang;
+  if (Math.abs(ax) > 0.2) p.dirX = Math.sign(ax);
+  p.back = ay < -0.6;
+  p.vx += ax * FEEL.lunge;
+  p.vy += ay * FEEL.lunge;
+  G.cam.x += ax * 4; // 카메라도 살짝 앞으로 툭
+  G.cam.y += ay * 4;
   Sound.swing();
   G.effects.push({ type: 'slash', ang, arc: s.arc, range: s.range, t: 0, life: 0.2, dir: p.swingDir });
-  let hitAny = false;
+  let hits = 0, crits = 0;
   for (const m of G.monsters) {
     if (m.dead) continue;
     const d = Math.hypot(m.x - p.x, m.y - p.y);
@@ -281,17 +377,25 @@ function slashAttack(p) {
     const a = Math.atan2(m.y - p.y, m.x - p.x);
     if (d > m.r + PLAYER_R && Math.abs(angleDiff(a, ang)) > s.arc / 2) continue;
     const crit = Math.random() < 0.1;
-    hurtMonster(m, s.dmg * rand(0.9, 1.1) * (crit ? 2 : 1), p.x, p.y, 380, crit);
-    hitAny = true;
+    hurtMonster(m, s.dmg * rand(0.9, 1.1) * (crit ? 2 : 1), p.x, p.y, FEEL.knockback, crit);
+    G.effects.push({ type: 'spark', x: m.x, y: m.y - m.r, ang: a, t: 0, life: 0.12, big: crit });
+    hits++;
+    if (crit) crits++;
   }
-  if (hitAny) Sound.hit();
+  if (hits > 0) {
+    Sound.hit();
+    addHitstop(crits > 0 ? FEEL.hitstopCrit : FEEL.hitstop);
+    G.shake = Math.max(G.shake, crits > 0 ? 6 : 3 + Math.min(hits, 4) * 0.5);
+  }
 }
 
 function guardianLight() {
   const s = S();
   const f = G.follower;
   Sound.skill();
-  G.shake = Math.max(G.shake, 8);
+  G.shake = Math.max(G.shake, 10);
+  addHitstop(0.08);
+  G.flashScreen = 0.15;
   G.effects.push({ type: 'ring', x: f.x, y: f.y, r: s.skillRadius, t: 0, life: 0.5 });
   for (const m of G.monsters) {
     if (m.dead) continue;
@@ -504,7 +608,7 @@ function updateMonsters(dt) {
     // 시오리는 몸으로 요괴를 막을 수 있어요 (보스는 시오리를 밀어내요)
     const pd = Math.hypot(m.x - p.x, m.y - p.y);
     const pmin = m.r + PLAYER_R;
-    if (pd < pmin && pd > 0.01) {
+    if (pd < pmin && pd > 0.01 && G.player.dashT <= 0) {
       const push = pmin - pd;
       if (m.type === 'boss') {
         p.x -= ((m.x - p.x) / pd) * push;
@@ -569,6 +673,7 @@ function hurtMonster(m, dmg, fromX, fromY, knock, crit) {
   const dx = m.x - fromX, dy = m.y - fromY, d = Math.hypot(dx, dy) || 1;
   m.kx += (dx / d) * knock / m.def.mass;
   m.ky += (dy / d) * knock / m.def.mass;
+  m.hitDx = dx / d; m.hitDy = dy / d; // 처치될 때 이 방향으로 터져요
   addText(m.x + rand(-8, 8), m.y - m.r * 2 - 10, Math.round(dmg), crit ? '#ffd23f' : '#ffffff', crit ? 28 : 20);
   burst(m.x, m.y - m.r, '#ffffff', 3);
   if (m.hp <= 0) killMonster(m);
@@ -578,10 +683,25 @@ function killMonster(m) {
   m.dead = true;
   G.progress.kills++;
   Sound.kill();
-  burst(m.x, m.y - m.r, m.def.color || '#b48cff', m.type === 'boss' ? 60 : 10);
+  burst(m.x, m.y - m.r, m.def.color || '#b48cff', m.type === 'boss' ? 60 : 8);
+  // 맞은 방향으로 파편이 튀어요
+  const hx = m.hitDx || 0, hy = m.hitDy || 0;
+  for (let i = 0; i < 10; i++) {
+    const sp = rand(200, 520);
+    const a = Math.atan2(hy, hx) + rand(-0.6, 0.6);
+    G.particles.push({ x: m.x, y: m.y - m.r, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, life: rand(0.25, 0.45), color: i % 2 ? '#ffffff' : (m.def.color || '#b48cff'), size: rand(2.5, 5) });
+  }
+  G.effects.push({ type: 'pop', x: m.x, y: m.y - m.r, r: m.r * 2.2, t: 0, life: 0.22 });
   if (m.type === 'boss') {
-    G.shake = 20;
+    G.shake = 24;
+    addHitstop(FEEL.hitstopBoss);
     return;
+  }
+  if (m.def.mass >= 3) {
+    addHitstop(FEEL.hitstopHeavy);
+    G.shake = Math.max(G.shake, 8);
+  } else {
+    G.shake = Math.max(G.shake, 4);
   }
   G.gems.push({ x: m.x, y: m.y, v: m.def.xp, t: rand(0, 6), pull: false });
   if (Math.random() < 0.025) G.hearts.push({ x: m.x + 10, y: m.y, t: 0 });
@@ -672,14 +792,22 @@ function updateEffects(dt) {
   G.particles = G.particles.filter((pt) => pt.t < pt.life);
   for (const tx of G.texts) { tx.t += dt; tx.y -= 40 * dt; }
   G.texts = G.texts.filter((tx) => tx.t < tx.life);
+  for (const gh of G.ghosts) gh.t += dt;
+  G.ghosts = G.ghosts.filter((gh) => gh.t < gh.life);
+  G.flashScreen = Math.max(0, (G.flashScreen || 0) - dt);
   G.shake = Math.max(0, G.shake - dt * 30);
 }
 
 function updateCamera(dt) {
   const p = G.player;
-  const k = 1 - Math.exp(-8 * dt);
-  G.cam.x += (p.x - G.cam.x) * k;
-  G.cam.y += (p.y - 20 - G.cam.y) * k;
+  // 이동하는 방향을 조금 더 보여주도록 카메라가 살짝 앞서가요
+  const lk = 1 - Math.exp(-3 * dt);
+  const lx = p.moving ? p.fx * FEEL.camLead : 0, ly = p.moving ? p.fy * FEEL.camLead : 0;
+  G.camLead.x += (lx - G.camLead.x) * lk;
+  G.camLead.y += (ly - G.camLead.y) * lk;
+  const k = 1 - Math.exp(-FEEL.camFollow * dt);
+  G.cam.x += (p.x + G.camLead.x - G.cam.x) * k;
+  G.cam.y += (p.y - 20 + G.camLead.y - G.cam.y) * k;
 }
 
 // =====================================================
@@ -1104,6 +1232,13 @@ function drawWorld() {
     ctx.stroke();
   }
 
+  // 대시 잔상
+  for (const gh of G.ghosts) {
+    ctx.globalAlpha = 0.45 * (1 - gh.t / gh.life);
+    Art.shiori(ctx, { x: gh.x, y: gh.y, t: gh.pt, moving: true, dirX: gh.dirX, back: gh.back, flash: true, swing: 0, claw: gh.claw });
+  }
+  ctx.globalAlpha = 1;
+
   // 캐릭터와 몬스터를 y좌표 순서로 그려요 (아래쪽에 있는 게 앞에 보이도록)
   const p = G.player;
   const list = [
@@ -1136,7 +1271,17 @@ function drawWorld() {
     }
   }
 
-  for (const e of G.effects) if (e.type === 'slash') drawSlash(e);
+  for (const e of G.effects) {
+    if (e.type === 'slash') drawSlash(e);
+    else if (e.type === 'spark') drawSpark(e);
+    else if (e.type === 'pop') {
+      const k = e.t / e.life;
+      pathEllipse(ctx, e.x, e.y, e.r * (0.4 + k * 0.8), e.r * (0.4 + k * 0.8));
+      ctx.lineWidth = 5 * (1 - k) + 0.5;
+      ctx.strokeStyle = `rgba(255,255,255,${1 - k})`;
+      ctx.stroke();
+    }
+  }
 
   for (const pt of G.particles) {
     ctx.globalAlpha = 1 - pt.t / pt.life;
@@ -1149,7 +1294,8 @@ function drawWorld() {
   ctx.textAlign = 'center';
   for (const tx of G.texts) {
     ctx.globalAlpha = 1 - Math.pow(tx.t / tx.life, 2);
-    ctx.font = `${tx.size}px ${FONT_TITLE}`;
+    const popScale = 1 + 0.6 * Math.max(0, 1 - tx.t / 0.1);
+    ctx.font = `${Math.round(tx.size * popScale)}px ${FONT_TITLE}`;
     ctx.lineWidth = 4;
     ctx.strokeStyle = '#2b2233';
     ctx.strokeText(tx.text, tx.x, tx.y);
@@ -1163,6 +1309,31 @@ function drawWorld() {
   // 스테이지 분위기 색 덧칠
   const tint = { street: null, beach: 'rgba(255,110,60,0.14)', shrine: 'rgba(20,20,80,0.3)' }[stage().theme];
   if (tint) { ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); }
+
+  // 스킬을 쓰면 화면이 순간 하얗게 번쩍
+  if (G.flashScreen > 0) {
+    ctx.fillStyle = `rgba(220,245,255,${G.flashScreen / 0.15 * 0.35})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// 타격 불꽃: 맞은 자리에 X자 모양 빛이 번쩍
+function drawSpark(e) {
+  const k = e.t / e.life;
+  const len = (e.big ? 34 : 24) * (0.6 + k * 0.6);
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.rotate(e.ang);
+  ctx.globalAlpha = 1 - k;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = e.big ? '#ffe46b' : '#ffffff';
+  ctx.lineWidth = (e.big ? 6 : 4) * (1 - k) + 1;
+  ctx.beginPath();
+  ctx.moveTo(-len, 0); ctx.lineTo(len, 0);
+  ctx.moveTo(0, -len * 0.45); ctx.lineTo(0, len * 0.45);
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 function drawMonster(m) {
@@ -1259,6 +1430,26 @@ function drawHUD() {
   drawText('🌊', sx, sy + 10, 28, '#fff', 'center', FONT_TITLE, 0);
   drawText('X', sx + 26, sy + 30, 20, '#ffffff', 'center');
   drawText(cd <= 0 ? '파도 장벽 준비!' : `${Math.ceil(p.skillTimer)}초`, sx + 48, sy + 8, 18, cd <= 0 ? '#9fe3ff' : '#cfc4e0', 'left', FONT_TITLE, 4);
+
+  // 대시 아이콘
+  const dx = 60, dy = H - 168, dr = 24;
+  const dcd = clamp(p.dashCd / FEEL.dashCooldown, 0, 1);
+  pathEllipse(ctx, dx, dy, dr, dr);
+  ctx.fillStyle = dcd <= 0 ? '#c9f1ff' : '#4d5a70';
+  ctx.fill();
+  if (dcd > 0) {
+    ctx.beginPath();
+    ctx.moveTo(dx, dy);
+    ctx.arc(dx, dy, dr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - dcd));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(201,241,255,0.6)';
+    ctx.fill();
+  }
+  pathEllipse(ctx, dx, dy, dr, dr);
+  ctx.lineWidth = 3; ctx.strokeStyle = dcd <= 0 ? '#ffffff' : '#a99cc0'; ctx.stroke();
+  drawText('»', dx, dy + 9, 30, dcd <= 0 ? '#2c3e6b' : '#cfc4e0', 'center', FONT_TITLE, 0);
+  drawText('C', dx + 20, dy + 22, 18, '#ffffff', 'center');
+  drawText('대시', dx + 38, dy + 7, 18, '#cfe7ff', 'left', FONT_TITLE, 4);
 
   // 히나코 체력이 낮으면 화면 가장자리가 빨갛게
   if (ratio < 0.3) {
@@ -1449,7 +1640,7 @@ function drawTitle() {
   drawText('~ 「나를 먹고 싶은, 괴물」 팬게임 ~', W / 2, 225 + bob, 28, '#d8d0ff', 'center', FONT_TITLE, 6);
 
   if (Math.floor(t * 2) % 2 === 0) drawText('Z 키를 눌러 시작', W / 2, 310, 34, '#ffffff', 'center');
-  drawText('방향키: 이동   Z: 손톱 공격   X: 파도 장벽   ESC: 메뉴   M: 소리 끄기', W / 2, H - 20, 20, 'rgba(255,255,255,0.9)', 'center', FONT_TITLE, 4);
+  drawText('방향키: 이동   Z: 손톱 공격   X: 파도 장벽   C: 대시   ESC: 메뉴   M: 소리', W / 2, H - 20, 20, 'rgba(255,255,255,0.9)', 'center', FONT_TITLE, 4);
 }
 
 function drawGameOver() {

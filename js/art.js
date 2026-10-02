@@ -132,7 +132,17 @@ function shioriArm(ctx, o, C, bob, step, f) {
   ctx.save();
   ctx.translate(8, -30 + bob);
   if (o.claw > 0) {
-    const ang = o.swing > 0 ? -1.9 + (1 - o.swing) * 3.0 : 0.45 + Math.sin(o.t * 3) * 0.05;
+    let ang = 0.45 + Math.sin(o.t * 3) * 0.05; // 평소엔 아래로 늘어뜨려요
+    if (o.swing > 0) {
+      if (o.aimAng != null) {
+        // 공격 방향을 중심으로 손톱을 크게 휘둘러요 (좌우 반전된 그림이라 각도도 뒤집어 줘요)
+        const local = o.dirX > 0 ? o.aimAng : Math.PI - o.aimAng;
+        const sweep = (o.swingDir || 1) * o.dirX;
+        ang = local - Math.PI / 2 + (-1.3 + (1 - o.swing) * 2.6) * sweep;
+      } else {
+        ang = -1.9 + (1 - o.swing) * 3.0;
+      }
+    }
     ctx.rotate(ang);
     // 손톱 3개 (길고 날카롭게)
     [-2.6, 0, 2.6].forEach((k, i) => {

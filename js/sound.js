@@ -33,7 +33,8 @@ const Sound = {
   },
 
   swing()   { this.tone(900, 250, 0.09, 'triangle', 0.06); },
-  hit()     { this.tone(260, 90, 0.08, 'square', 0.05); },
+  hit()     { this.tone(260, 90, 0.08, 'square', 0.05); this.tone(140, 50, 0.1, 'sine', 0.14); },
+  dash()    { this.tone(400, 1400, 0.12, 'triangle', 0.06); },
   kill()    { this.tone(500, 120, 0.12, 'triangle', 0.06); },
   pickup()  { this.tone(1100, 1600, 0.06, 'sine', 0.05); },
   heal()    { this.tone(600, 1200, 0.25, 'sine', 0.08); },

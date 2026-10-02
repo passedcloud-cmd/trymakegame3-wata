@@ -20,7 +20,7 @@ const PROLOGUE = [
   { who: 'hinako', face: 'normal', text: '하나도 안 기뻐. …미안, 시오리. 또 귀찮게 해서.' },
   { who: 'shiori', face: 'smile', text: '사과할 필요 없어요. 히나코를 다른 녀석들한테 넘겨줄 생각은 없으니까요.' },
   { who: 'shiori', face: 'angry', text: '제 뒤에 딱 붙어 계세요. 오른팔, 잠깐만 쓸게요.' },
-  { who: null, text: '방향키로 이동, Z로 손톱 공격, X로 「파도 장벽」! 히나코가 쓰러지면 끝이야.' },
+  { who: null, text: '방향키로 이동, Z로 손톱 공격(가까운 요괴를 자동으로 노려요), X로 「파도 장벽」, C로 대시! 히나코가 쓰러지면 끝이야.' },
 ];
 
 const STAGE_STORIES = [

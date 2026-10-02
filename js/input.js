@@ -10,7 +10,8 @@ const KEYMAP = {
   left: ['ArrowLeft'],
   right: ['ArrowRight'],
   attack: ['KeyZ', 'ShiftLeft'],        // 공격 (누르고 있으면 계속 휘둘러요)
-  skill: ['KeyX', 'KeyA'],              // 스킬: 수호의 빛
+  skill: ['KeyX', 'KeyA'],              // 스킬: 파도 장벽
+  dash: ['KeyC'],                       // 대시 (짧게 휙 이동)
   confirm: ['KeyZ', 'Enter', 'Space'],  // 대화 넘기기 / 선택
   back: ['KeyX', 'Backspace'],
   skip: ['KeyS'],                       // 스토리 건너뛰기
